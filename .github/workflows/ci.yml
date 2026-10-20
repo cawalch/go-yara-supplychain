@@ -17,7 +17,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.26.x'
+          check-latest: true
           cache: true
 
       - name: Verify Formatting
@@ -36,4 +37,6 @@ jobs:
         run: go build -v ./cmd/go-yara-supplychain
 
       - name: Run Govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+          govulncheck ./...
