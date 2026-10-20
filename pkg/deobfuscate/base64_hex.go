@@ -17,6 +17,16 @@ var (
 
 	// Matches general base64 string literals
 	genericB64StringRE = regexp.MustCompile(`['"]([A-Za-z0-9+/=]{24,})['"]`)
+
+	// Matches backtick template literals with base64 payloads
+	templateB64RE = regexp.MustCompile("`([A-Za-z0-9+/=]{24,})`")
+
+	// Matches multi-line or single-line comments hiding base64 payloads
+	commentBlockB64RE = regexp.MustCompile(`/\*\s*([A-Za-z0-9+/=]{24,})\s*\*/`)
+	commentLineB64RE  = regexp.MustCompile(`//\s*([A-Za-z0-9+/=]{24,})\b`)
+
+	// Matches data:text/...;base64, payloads
+	dataURIB64RE = regexp.MustCompile(`data:[^;]+;base64,([A-Za-z0-9+/=]{24,})`)
 )
 
 // UnpackBase64Payloads searches for embedded Base64 strings in script code, decodes them,
@@ -39,6 +49,26 @@ func UnpackBase64Payloads(content string) (unpacked string, payloads []string) {
 		}
 	}
 	for _, sub := range genericB64StringRE.FindAllStringSubmatch(content, -1) {
+		if len(sub) == 2 {
+			candidates = append(candidates, sub[1])
+		}
+	}
+	for _, sub := range templateB64RE.FindAllStringSubmatch(content, -1) {
+		if len(sub) == 2 {
+			candidates = append(candidates, sub[1])
+		}
+	}
+	for _, sub := range commentBlockB64RE.FindAllStringSubmatch(content, -1) {
+		if len(sub) == 2 {
+			candidates = append(candidates, sub[1])
+		}
+	}
+	for _, sub := range commentLineB64RE.FindAllStringSubmatch(content, -1) {
+		if len(sub) == 2 {
+			candidates = append(candidates, sub[1])
+		}
+	}
+	for _, sub := range dataURIB64RE.FindAllStringSubmatch(content, -1) {
 		if len(sub) == 2 {
 			candidates = append(candidates, sub[1])
 		}

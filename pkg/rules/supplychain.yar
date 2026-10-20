@@ -226,3 +226,83 @@ rule Bitwise_XOR_Obfuscated_Execution {
     condition:
         any of ($pxor*, $py_xor, $js_xor) and any of ($e*)
 }
+
+rule Telegram_Discord_Credential_Exfiltration {
+    meta:
+        description = "Detects credential or environment harvesting paired with messaging API / webhook exfiltration"
+        severity = "CRITICAL"
+        category = "exfiltration"
+    strings:
+        $env1 = "process.env" ascii
+        $env2 = "os.environ" ascii
+        $sec1 = ".aws/credentials" ascii
+        $sec2 = ".ssh/id_rsa" ascii
+        $sec3 = ".ssh/id_ed25519" ascii
+        $sec4 = "/.env" ascii
+        $sec5 = "\".env\"" ascii
+        $sec6 = "'.env'" ascii
+        $ep1 = "api.telegram.org/bot" ascii nocase
+        $ep2 = "discord.com/api/webhooks" ascii nocase
+        $ep3 = "webhook.site" ascii nocase
+        $ep4 = "pipedream.net" ascii nocase
+    condition:
+        any of ($env*, $sec*) and any of ($ep*)
+}
+
+rule Polyfill_Dynamic_Script_Injection {
+    meta:
+        description = "Detects dynamic DOM script injection paired with user-agent evasion or remote domain loading"
+        severity = "CRITICAL"
+        category = "tampering"
+    strings:
+        $elem1 = "document.createElement('script')" ascii nocase
+        $elem2 = "document.createElement(\"script\")" ascii nocase
+        $src = /\.src\s*=/ ascii nocase
+        $ua1 = "navigator.userAgent" ascii
+        $ua2 = "Googlebot" ascii nocase
+        $ua3 = "Yandex" ascii nocase
+        $ext1 = "https://" ascii
+        $ext2 = "http://" ascii
+    condition:
+        ($elem1 or $elem2) and $src and (any of ($ua*) or any of ($ext*))
+}
+
+rule Raw_Socket_Data_Exfiltration {
+    meta:
+        description = "Detects raw network socket connection transmitting system credentials or environment variables"
+        severity = "CRITICAL"
+        category = "exfiltration"
+    strings:
+        $net1 = "net.createConnection" ascii
+        $net2 = "net.connect" ascii
+        $net3 = "new net.Socket" ascii
+        $py_sock = "socket.socket" ascii
+        $data1 = "process.env" ascii
+        $data2 = "os.environ" ascii
+        $data3 = "/etc/passwd" ascii
+        $data4 = "/etc/shadow" ascii
+        $data5 = ".aws/credentials" ascii
+    condition:
+        any of ($net*, $py_sock) and any of ($data*)
+}
+
+rule Suspicious_Install_Hook_Network_Fetch {
+    meta:
+        description = "Detects remote code download inside package installation script or setup execution"
+        severity = "HIGH"
+        category = "dropper"
+    strings:
+        $f1 = "fetch(" ascii
+        $f2 = "http.get(" ascii
+        $f3 = "https.get(" ascii
+        $f4 = "urllib.request.urlopen(" ascii
+        $f5 = "requests.get(" ascii
+        $e1 = "eval(" ascii
+        $e2 = "exec(" ascii
+        $e3 = "spawn(" ascii
+        $e4 = "execSync(" ascii
+        $e5 = "os.system(" ascii
+        $e6 = "subprocess." ascii
+    condition:
+        any of ($f*) and any of ($e*)
+}

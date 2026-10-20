@@ -45,7 +45,7 @@ func NewEngine() (*Engine, error) {
 
 // AnalyzePackage analyzes an inspected npm package and returns an actionable verdict.
 func (e *Engine) AnalyzePackage(pkg *npm.InspectedPackage) (*Verdict, error) {
-	return e.Analyze(TargetPackage{
+	return e.Analyze(&TargetPackage{
 		Ecosystem:   "npm",
 		Path:        pkg.Path,
 		Name:        pkg.Manifest.Name,
@@ -58,7 +58,7 @@ func (e *Engine) AnalyzePackage(pkg *npm.InspectedPackage) (*Verdict, error) {
 
 // AnalyzePyPIPackage analyzes an inspected Python/PyPI package and returns an actionable verdict.
 func (e *Engine) AnalyzePyPIPackage(pkg *pypi.Package) (*Verdict, error) {
-	return e.Analyze(TargetPackage{
+	return e.Analyze(&TargetPackage{
 		Ecosystem:   "pypi",
 		Path:        pkg.Path,
 		Name:        pkg.Name,
@@ -71,7 +71,7 @@ func (e *Engine) AnalyzePyPIPackage(pkg *pypi.Package) (*Verdict, error) {
 
 // AnalyzePHPPackage analyzes an inspected PHP, Composer, or WordPress plugin/theme package and returns an actionable verdict.
 func (e *Engine) AnalyzePHPPackage(pkg *php.Package) (*Verdict, error) {
-	return e.Analyze(TargetPackage{
+	return e.Analyze(&TargetPackage{
 		Ecosystem:   pkg.Type,
 		Path:        pkg.Path,
 		Name:        pkg.Name,
@@ -83,7 +83,7 @@ func (e *Engine) AnalyzePHPPackage(pkg *php.Package) (*Verdict, error) {
 }
 
 // Analyze coordinates multi-stage static analysis, heuristic scoring, and neural inference for any package target.
-func (e *Engine) Analyze(target TargetPackage) (*Verdict, error) {
+func (e *Engine) Analyze(target *TargetPackage) (*Verdict, error) {
 	scanner := compiler.NewScanner(e.compiledProg)
 	defer scanner.Close()
 
@@ -173,6 +173,10 @@ func (e *Engine) Analyze(target TargetPackage) (*Verdict, error) {
 			hadObfuscation = true
 		}
 		if normRes.HadStringConcat {
+			fv.StringConcatDensity += 1.0
+			hadObfuscation = true
+		}
+		if normRes.HadStringArrays {
 			fv.StringConcatDensity += 1.0
 			hadObfuscation = true
 		}
@@ -328,6 +332,22 @@ func extractEvidenceItem(rm compiler.RuleMatch, relPath, content string) Evidenc
 		severity = RiskMedium
 		category = "exfiltration"
 		desc = "Outbound connection to public webhook or raw IP address"
+	case "Telegram_Discord_Credential_Exfiltration":
+		severity = RiskCritical
+		category = "exfiltration"
+		desc = "Exfiltrating environment variables or secrets to messaging webhook"
+	case "Polyfill_Dynamic_Script_Injection":
+		severity = RiskCritical
+		category = "tampering"
+		desc = "Dynamic DOM script injection with remote host or user-agent evasion"
+	case "Raw_Socket_Data_Exfiltration":
+		severity = RiskCritical
+		category = "exfiltration"
+		desc = "Raw network socket transmitting system credentials or environment variables"
+	case "Suspicious_Install_Hook_Network_Fetch":
+		severity = RiskHigh
+		category = "dropper"
+		desc = "Remote script download and execution inside package installation script"
 	}
 
 	snippet := ""

