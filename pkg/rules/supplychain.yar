@@ -51,7 +51,7 @@ rule Suspicious_Exfiltration_Endpoint {
         $w3 = "pastebin.com/raw" ascii nocase
         $w4 = "pipedream.net" ascii nocase
         $w5 = "requestbin" ascii nocase
-        $ip = /https?:\/\/[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(:[0-9]{2,5})?/ ascii
+        $ip = /(https?:\/\/|['"])[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(:[0-9]{2,5})?['"]?/ ascii
     condition:
         any of them
 }

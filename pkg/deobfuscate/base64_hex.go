@@ -55,8 +55,8 @@ func UnpackBase64Payloads(content string) (unpacked string, payloads []string) {
 			continue
 		}
 
-		// Verify that decoded data is printable text (e.g. JS/shell code)
-		if isPrintableText(raw) {
+		// Verify that decoded data is genuine executable code payload (not inlined SVG or font assets)
+		if isLikelyCodePayload(raw) {
 			decodedPayloads = append(decodedPayloads, string(raw))
 		}
 	}
@@ -75,6 +75,43 @@ func UnpackBase64Payloads(content string) (unpacked string, payloads []string) {
 	}
 
 	return sb.String(), decodedPayloads
+}
+
+func isLikelyCodePayload(b []byte) bool {
+	if !isPrintableText(b) {
+		return false
+	}
+
+	s := strings.TrimSpace(string(b))
+
+	// Filter out non-code assets (SVGs, XML, CSS, HTML snippets) common in bundled web applications
+	if strings.HasPrefix(s, "<svg") || strings.HasPrefix(s, "<?xml") ||
+		strings.HasPrefix(s, "<!DOCTYPE") || strings.HasPrefix(s, "data:") {
+		return false
+	}
+
+	// Must contain recognizable script primitives, shell keywords, or execution calls
+	codeIndicators := []string{
+		"require(", "require (",
+		"import ", "export ",
+		"function", "=>",
+		"var ", "const ", "let ",
+		"eval(", "Function(", "vm.runIn",
+		"child_process", "exec(", "spawn(", "execSync(",
+		"process.env", "process.platform",
+		"net.connect", "net.Socket",
+		"http.request", "https.request",
+		"curl ", "wget ", "chmod ",
+		"/bin/sh", "/bin/bash", "cmd.exe", "powershell",
+	}
+
+	for _, kw := range codeIndicators {
+		if strings.Contains(s, kw) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func isPrintableText(b []byte) bool {

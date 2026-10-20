@@ -1,6 +1,9 @@
-.PHONY: all build test test-race lint check fmt clean
+.PHONY: all build test test-race lint check fmt clean train
 
 all: check build
+
+train:
+	go run ./tools/train
 
 build:
 	go build -v -o bin/go-yara-supplychain ./cmd/go-yara-supplychain

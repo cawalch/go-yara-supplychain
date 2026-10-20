@@ -14,11 +14,11 @@ import (
 )
 
 var (
-	pipeToShellRE = regexp.MustCompile(`(?i)(curl|wget)\s+[^|;` + "`" + `\r\n]+\|\s*(sh|bash|zsh|python)`)
+	pipeToShellRE = regexp.MustCompile(`(?i)(curl|wget)\s+[^|;` + "`" + `\r\n]+\|\s*(sh|bash|zsh|python|cmd\.exe|powershell)`)
 	curlRE        = regexp.MustCompile(`(?i)\b(curl|wget|fetch|http\.get)\b`)
 	evalRE        = regexp.MustCompile(`(?:\beval\s*\(|\b(?:new\s+)?Function\s*\(|\bvm\.runIn\w*\s*\()`)
 	childProcRE   = regexp.MustCompile(`(?i)\bchild_process\.(exec|spawn|execSync|fork)\b`)
-	rawIPRE       = regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{2,5}\b`)
+	rawIPRE       = regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d{2,5})?\b`)
 	webhookRE     = regexp.MustCompile(`(?i)(discord\.com/api/webhooks|api\.telegram\.org/bot|webhook\.site)`)
 	sensitiveRE   = regexp.MustCompile(`(?i)(\.ssh/id_|\.aws/credentials|/\.env\b|['"` + "`" + `]\.env['"` + "`" + `]|/etc/shadow|/etc/passwd)`)
 )
@@ -26,7 +26,7 @@ var (
 // Engine coordinates the multi-stage supply chain analysis pipeline.
 type Engine struct {
 	compiledProg *compiler.CompiledProgram
-	mlModel      *ml.NeuralClassifier
+	mlModel      *ml.Classifier
 }
 
 // NewEngine creates an initialized Engine backed by compiled supply chain YARA rules and ML inference model.
@@ -98,6 +98,9 @@ func (e *Engine) AnalyzePackage(pkg *npm.InspectedPackage) (*Verdict, error) {
 
 		// Feature extraction from source content
 		srcStr := string(rawContent)
+		if pipeToShellRE.MatchString(srcStr) {
+			fv.HookPipesToShell = 1.0
+		}
 		if evalRE.MatchString(srcStr) {
 			fv.DynamicEval = 1.0
 		}
@@ -187,7 +190,7 @@ func (e *Engine) AnalyzePackage(pkg *npm.InspectedPackage) (*Verdict, error) {
 	// 4. Ensemble Calibrated Score
 	var finalScore float64
 	switch {
-	case heuristicScore >= 0.85 || pred.Probability >= 0.90:
+	case heuristicScore >= 0.60 || pred.Probability >= 0.70:
 		// High confidence consensus
 		finalScore = math.Max(heuristicScore, pred.Probability)
 	case fv.ChecksumValidation > 0 && fv.TrustedCDNSource > 0 && !fvHasCriticalThreat(&fv):
@@ -195,7 +198,7 @@ func (e *Engine) AnalyzePackage(pkg *npm.InspectedPackage) (*Verdict, error) {
 		finalScore = math.Min(heuristicScore, pred.Probability)
 	default:
 		// Weighted ensemble
-		finalScore = 0.4*heuristicScore + 0.6*pred.Probability
+		finalScore = 0.5*heuristicScore + 0.5*pred.Probability
 	}
 
 	if finalScore > 1.0 {

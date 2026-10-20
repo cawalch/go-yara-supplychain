@@ -75,6 +75,17 @@ func TestUnpackBase64Payloads(t *testing.T) {
 	}
 }
 
+func TestUnpackBase64_IgnoresStaticAssets(t *testing.T) {
+	// Base64 for: <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><circle cx="8" cy="8" r="8"/></svg>
+	svgBase64 := "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiI+PGNpcmNsZSBjeD0iOCIgY3k9IjgiIHI9IjgiLz48L3N2Zz4="
+	minifiedCode := `const icon = "data:image/svg+xml;base64,` + svgBase64 + `";`
+
+	_, decoded := UnpackBase64Payloads(minifiedCode)
+	if len(decoded) != 0 {
+		t.Fatalf("expected 0 decoded payloads for inlined SVG asset, got %d: %v", len(decoded), decoded)
+	}
+}
+
 func TestNormalizePipeline(t *testing.T) {
 	// Combines zero-width space, split strings, and base64
 	input := "const payload = \"dm\u200bFyIG5ldCA9IHJlcXVpcmUoJ25ldCcpOw==\";\n" +

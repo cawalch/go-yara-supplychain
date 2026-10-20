@@ -1,0 +1,276 @@
+package main
+
+import (
+	"fmt"
+	"math"
+	"os"
+	"strings"
+
+	"github.com/cawalch/go-yara-supplychain/pkg/ml"
+)
+
+// TrainedLinearModel represents the learned logistic regression / single-layer perceptron.
+type TrainedLinearModel struct {
+	Weights [16]float64
+	Bias    float64
+}
+
+// Predict calculates P(malicious | x) using sigmoid activation.
+func (m *TrainedLinearModel) Predict(x *[16]float64) float64 {
+	z := m.Bias
+	for i := 0; i < 16; i++ {
+		z += x[i] * m.Weights[i]
+	}
+	switch {
+	case z > 15.0:
+		return 1.0
+	case z < -15.0:
+		return 0.0
+	default:
+		return 1.0 / (1.0 + math.Exp(-z))
+	}
+}
+
+// FoldMetrics captures evaluation stats for a single validation fold.
+type FoldMetrics struct {
+	FoldNumber int
+	TrainLoss  float64
+	ValLoss    float64
+	TP         int
+	FP         int
+	TN         int
+	FN         int
+	Accuracy   float64
+	Precision  float64
+	Recall     float64
+	F1         float64
+	FPRate     float64
+}
+
+// TrainLogisticRegression trains a calibrated model using gradient descent with L2 regularization.
+func TrainLogisticRegression(data []ProcessedSample, epochs int, lr, l2 float64) (model *TrainedLinearModel, finalLoss float64) {
+	var m TrainedLinearModel
+	m.Bias = -2.0 // prior bias favoring benign baseline
+
+	n := float64(len(data))
+	if n == 0 {
+		return &m, 0
+	}
+
+	finalLoss = 0.0
+
+	for ep := 0; ep < epochs; ep++ {
+		var gradW [16]float64
+		var gradB float64
+		epochLoss := 0.0
+
+		for i := range data {
+			s := &data[i]
+			p := m.Predict(&s.Features)
+			y := float64(s.Label)
+
+			// Binary cross-entropy loss with eps clipping
+			pClamped := math.Max(1e-15, math.Min(1.0-1e-15, p))
+			loss := -(y*math.Log(pClamped) + (1.0-y)*math.Log(1.0-pClamped))
+			epochLoss += loss
+
+			err := p - y
+			for j := 0; j < 16; j++ {
+				gradW[j] += err * s.Features[j]
+			}
+			gradB += err
+		}
+
+		// Apply gradients with L2 regularization
+		for i := 0; i < 16; i++ {
+			gradW[i] = (gradW[i] / n) + (l2 * m.Weights[i])
+			m.Weights[i] -= lr * gradW[i]
+		}
+		gradB /= n
+		m.Bias -= lr * gradB
+
+		finalLoss = epochLoss / n
+	}
+
+	// Calibrate baseline bias to reflect real-world registry base rates (< 2% malicious)
+	// rather than balanced laboratory corpus sample rates (40% malicious)
+	trainPrev := 0.40
+	targetPrev := 0.03
+	adjustment := math.Log((targetPrev / (1.0 - targetPrev)) / (trainPrev / (1.0 - trainPrev)))
+	m.Bias += adjustment
+
+	return &m, finalLoss
+}
+
+// RunStratifiedKFold performs 5-fold cross validation.
+func RunStratifiedKFold(dataset []ProcessedSample, k int) ([]FoldMetrics, error) {
+	benign := make([]ProcessedSample, 0)
+	malicious := make([]ProcessedSample, 0)
+
+	for i := range dataset {
+		if dataset[i].Label == 1 {
+			malicious = append(malicious, dataset[i])
+		} else {
+			benign = append(benign, dataset[i])
+		}
+	}
+
+	results := make([]FoldMetrics, k)
+
+	for fold := 0; fold < k; fold++ {
+		trainSet := make([]ProcessedSample, 0)
+		valSet := make([]ProcessedSample, 0)
+
+		// Stratified split for benign
+		for i := range benign {
+			if i%k == fold {
+				valSet = append(valSet, benign[i])
+			} else {
+				trainSet = append(trainSet, benign[i])
+			}
+		}
+
+		// Stratified split for malicious
+		for i := range malicious {
+			if i%k == fold {
+				valSet = append(valSet, malicious[i])
+			} else {
+				trainSet = append(trainSet, malicious[i])
+			}
+		}
+
+		model, trainLoss := TrainLogisticRegression(trainSet, 1500, 0.1, 0.001)
+
+		// Evaluate on validation set
+		tp, fp, tn, fn := 0, 0, 0, 0
+		valLossTotal := 0.0
+
+		for i := range valSet {
+			s := &valSet[i]
+			p := model.Predict(&s.Features)
+			y := float64(s.Label)
+			pClamped := math.Max(1e-15, math.Min(1.0-1e-15, p))
+			valLossTotal += -(y*math.Log(pClamped) + (1.0-y)*math.Log(1.0-pClamped))
+
+			predLabel := 0
+			if p >= 0.50 {
+				predLabel = 1
+			}
+
+			switch {
+			case s.Label == 1 && predLabel == 1:
+				tp++
+			case s.Label == 0 && predLabel == 1:
+				fp++
+			case s.Label == 0 && predLabel == 0:
+				tn++
+			case s.Label == 1 && predLabel == 0:
+				fn++
+			}
+		}
+
+		total := float64(tp + fp + tn + fn)
+		acc := 0.0
+		if total > 0 {
+			acc = float64(tp+tn) / total
+		}
+		prec := 0.0
+		if (tp + fp) > 0 {
+			prec = float64(tp) / float64(tp+fp)
+		}
+		rec := 0.0
+		if (tp + fn) > 0 {
+			rec = float64(tp) / float64(tp+fn)
+		}
+		f1 := 0.0
+		if (prec + rec) > 0 {
+			f1 = 2 * (prec * rec) / (prec + rec)
+		}
+		fpr := 0.0
+		if (fp + tn) > 0 {
+			fpr = float64(fp) / float64(fp+tn)
+		}
+
+		results[fold] = FoldMetrics{
+			FoldNumber: fold + 1,
+			TrainLoss:  trainLoss,
+			ValLoss:    valLossTotal / float64(len(valSet)),
+			TP:         tp,
+			FP:         fp,
+			TN:         tn,
+			FN:         fn,
+			Accuracy:   acc,
+			Precision:  prec,
+			Recall:     rec,
+			F1:         f1,
+			FPRate:     fpr,
+		}
+	}
+
+	return results, nil
+}
+
+// GenerateGoWeightsCode outputs the trained weights as pure Go constants in pkg/ml/weights_generated.go.
+func GenerateGoWeightsCode(model *TrainedLinearModel, outputPath string) error {
+	var sb strings.Builder
+	sb.WriteString("// Code generated by tools/train/trainer.go DO NOT EDIT.\n")
+	sb.WriteString("// Trained on verified benign npm distributions (including minified bundles) and documented supply chain malware.\n\n")
+	sb.WriteString("package ml\n\n")
+
+	sb.WriteString("// TrainedWeights contains the empirical learned coefficients from the training corpus.\n")
+	sb.WriteString("var TrainedWeights = [16]float64{\n")
+	for i := 0; i < 16; i++ {
+		fmt.Fprintf(&sb, "\t%.6f, // [%d] %s\n", model.Weights[i], i, ml.FeatureNames[i])
+	}
+	sb.WriteString("}\n\n")
+	fmt.Fprintf(&sb, "// TrainedBias represents the negative prior baseline for clean packages.\nconst TrainedBias = %.6f\n", model.Bias)
+
+	return os.WriteFile(outputPath, []byte(sb.String()), 0o644)
+}
+
+// GenerateMarkdownReport produces an auditable training report with cross-validation metrics and odds ratios.
+func GenerateMarkdownReport(model *TrainedLinearModel, folds []FoldMetrics, totalSamples int, outputPath string) error {
+	var sb strings.Builder
+	sb.WriteString("# Machine Learning Model Training & Empirical Validation Report\n\n")
+	fmt.Fprintf(&sb, "**Date**: October 2026 | **Total Verified Samples**: %d | **Optimizer**: Gradient Descent with $L_2$ Regularization\n\n", totalSamples)
+
+	sb.WriteString("## 1. 5-Fold Stratified Cross-Validation Results\n\n")
+	sb.WriteString("| Fold | Train Loss | Val Loss | Accuracy | Precision | Recall | F1 Score | False Positive Rate |\n")
+	sb.WriteString("| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n")
+
+	avgAcc, avgPrec, avgRec, avgF1, avgFPR := 0.0, 0.0, 0.0, 0.0, 0.0
+	k := float64(len(folds))
+
+	for _, f := range folds {
+		fmt.Fprintf(&sb, "| %d | %.4f | %.4f | %.1f%% | %.1f%% | %.1f%% | %.3f | **%.2f%%** |\n",
+			f.FoldNumber, f.TrainLoss, f.ValLoss, f.Accuracy*100, f.Precision*100, f.Recall*100, f.F1, f.FPRate*100)
+		avgAcc += f.Accuracy
+		avgPrec += f.Precision
+		avgRec += f.Recall
+		avgF1 += f.F1
+		avgFPR += f.FPRate
+	}
+
+	fmt.Fprintf(&sb, "| **Mean** | - | - | **%.1f%%** | **%.1f%%** | **%.1f%%** | **%.3f** | **%.2f%%** |\n\n",
+		(avgAcc/k)*100, (avgPrec/k)*100, (avgRec/k)*100, avgF1/k, (avgFPR/k)*100)
+
+	sb.WriteString("## 2. Learned Feature Weights & Odds Ratios\n\n")
+	sb.WriteString("| Index | Feature Name | Learned Weight ($w_i$) | Odds Ratio ($e^{w_i}$) | Signal Direction |\n")
+	sb.WriteString("| :---: | :--- | :---: | :---: | :--- |\n")
+
+	for i := 0; i < 16; i++ {
+		w := model.Weights[i]
+		odds := math.Exp(w)
+		direction := "Threat Signal (Risk Booster)"
+		if w < 0 {
+			direction = "**Protective Signal (Risk Attenuator)**"
+		}
+		fmt.Fprintf(&sb, "| %d | `%s` | `%.4f` | `%.3f` | %s |\n",
+			i, ml.FeatureNames[i], w, odds, direction)
+	}
+
+	fmt.Fprintf(&sb, "\n**Baseline Bias ($b$)**: `%.4f` (clean package prior probability: `%.2f%%`)\n",
+		model.Bias, (1.0/(1.0+math.Exp(-model.Bias)))*100.0)
+
+	return os.WriteFile(outputPath, []byte(sb.String()), 0o644)
+}
