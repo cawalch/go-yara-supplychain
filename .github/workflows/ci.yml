@@ -6,16 +6,19 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
 jobs:
   verify:
     name: Lint, Test & Race Detection
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@3041fe56661e304f4345d3750275817c6bc0203d # v5.2.0
         with:
           go-version: '1.26.x'
           check-latest: true
@@ -27,6 +30,15 @@ jobs:
           if [ -n "$diff" ]; then
             echo "The following files need gofmt:"
             echo "$diff"
+            exit 1
+          fi
+
+      - name: Verify Model Weights Synchronization
+        run: |
+          go run ./tools/train
+          if [ -n "$(git status --porcelain pkg/ml/weights_generated.go)" ]; then
+            echo "Error: pkg/ml/weights_generated.go is out of sync with training corpus. Run 'make train' and commit."
+            git diff pkg/ml/weights_generated.go
             exit 1
           fi
 
