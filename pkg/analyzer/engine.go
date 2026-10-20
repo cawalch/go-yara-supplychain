@@ -8,6 +8,7 @@ import (
 
 	"github.com/cawalch/go-yara-supplychain/pkg/deobfuscate"
 	"github.com/cawalch/go-yara-supplychain/pkg/ecosystems/npm"
+	"github.com/cawalch/go-yara-supplychain/pkg/ecosystems/php"
 	"github.com/cawalch/go-yara-supplychain/pkg/ecosystems/pypi"
 	"github.com/cawalch/go-yara-supplychain/pkg/ml"
 	"github.com/cawalch/go-yara-supplychain/pkg/rules"
@@ -16,12 +17,12 @@ import (
 
 var (
 	pipeToShellRE = regexp.MustCompile(`(?i)(curl|wget)\s+[^|;` + "`" + `\r\n]+\|\s*(sh|bash|zsh|python|cmd\.exe|powershell)`)
-	curlRE        = regexp.MustCompile(`(?i)\b(curl|wget|fetch|http\.get|urllib\.request|requests\.(get|post))\b`)
-	evalRE        = regexp.MustCompile(`(?:\beval\s*\(|\b(?:new\s+)?Function\s*\(|\bvm\.runIn\w*\s*\(|\bexec\s*\()`)
-	childProcRE   = regexp.MustCompile(`(?i)\b(child_process\.(exec|spawn|execSync|fork)|subprocess\.(Popen|run|call|check_output)|os\.system)\b`)
+	curlRE        = regexp.MustCompile(`(?i)\b(curl|wget|fetch|http\.get|urllib\.request|requests\.(get|post)|curl_exec|file_get_contents|fsockopen|stream_socket_client)\b`)
+	evalRE        = regexp.MustCompile(`(?:\beval\s*\(|\b(?:new\s+)?Function\s*\(|\bvm\.runIn\w*\s*\(|\bexec\s*\(|\bassert\s*\(|\bcreate_function\s*\()`)
+	childProcRE   = regexp.MustCompile(`(?i)\b(child_process\.(exec|spawn|execSync|fork)|subprocess\.(Popen|run|call|check_output)|os\.system|proc_open|shell_exec|passthru|popen)\b`)
 	rawIPRE       = regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d{2,5})?\b`)
 	webhookRE     = regexp.MustCompile(`(?i)(discord\.com/api/webhooks|api\.telegram\.org/bot|webhook\.site)`)
-	sensitiveRE   = regexp.MustCompile(`(?i)(\.ssh/id_|\.aws/credentials|/\.env\b|['"` + "`" + `]\.env['"` + "`" + `]|/etc/shadow|/etc/passwd|os\.environ)`)
+	sensitiveRE   = regexp.MustCompile(`(?i)(\.ssh/id_|\.aws/credentials|/\.env\b|['"` + "`" + `]\.env['"` + "`" + `]|/etc/shadow|/etc/passwd|os\.environ|wp-config\.php|DB_PASSWORD|AUTH_KEY)`)
 )
 
 // Engine coordinates the multi-stage supply chain analysis pipeline.
@@ -68,6 +69,19 @@ func (e *Engine) AnalyzePyPIPackage(pkg *pypi.Package) (*Verdict, error) {
 	})
 }
 
+// AnalyzePHPPackage analyzes an inspected PHP, Composer, or WordPress plugin/theme package and returns an actionable verdict.
+func (e *Engine) AnalyzePHPPackage(pkg *php.Package) (*Verdict, error) {
+	return e.Analyze(TargetPackage{
+		Ecosystem:   pkg.Type,
+		Path:        pkg.Path,
+		Name:        pkg.Name,
+		Version:     pkg.Version,
+		HasHooks:    pkg.HasHooks,
+		HookScripts: pkg.HookScripts,
+		SourceFiles: pkg.SourceFiles,
+	})
+}
+
 // Analyze coordinates multi-stage static analysis, heuristic scoring, and neural inference for any package target.
 func (e *Engine) Analyze(target TargetPackage) (*Verdict, error) {
 	scanner := compiler.NewScanner(e.compiledProg)
@@ -96,6 +110,8 @@ func (e *Engine) Analyze(target TargetPackage) (*Verdict, error) {
 	hookOriginFile := "package.json"
 	if target.Ecosystem == "pypi" {
 		hookOriginFile = "setup.py"
+	} else if strings.HasPrefix(target.Ecosystem, "wordpress") || strings.HasPrefix(target.Ecosystem, "composer") || target.Ecosystem == "php" {
+		hookOriginFile = "composer.json"
 	}
 
 	// 1. Analyze Package Lifecycle Scripts / Setup Hooks
@@ -119,7 +135,7 @@ func (e *Engine) Analyze(target TargetPackage) (*Verdict, error) {
 			continue
 		}
 
-		// Disambiguate benign build commands (node-gyp rebuild, cython, console notices)
+		// Disambiguate benign build commands (node-gyp rebuild, cython, composer dump-autoload, console notices)
 		if IsBenignBuildHook(hookCmd) {
 			continue
 		}
@@ -164,8 +180,12 @@ func (e *Engine) Analyze(target TargetPackage) (*Verdict, error) {
 			fv.Base64PayloadCount += float64(len(normRes.DecodedPayloads))
 			hadObfuscation = true
 		}
+		if normRes.HadXORLoop {
+			hadObfuscation = true
+			fv.UnicodeObfuscation += 1.0
+		}
 
-		// Disambiguate legitimate binary downloaders (esbuild, sharp, python prebuilt binaries)
+		// Disambiguate legitimate binary downloaders (esbuild, sharp, python/php prebuilt binaries)
 		if IsBenignBinaryFetcher(normRes.NormalizedCode) {
 			fv.ChecksumValidation = 1.0
 			fv.TrustedCDNSource = 1.0
@@ -279,7 +299,7 @@ func extractEvidenceItem(rm compiler.RuleMatch, relPath, content string) Evidenc
 	case "Credential_And_Secret_Harvesting":
 		severity = RiskHigh
 		category = "credential-theft"
-		desc = "Accessing sensitive cloud credentials or SSH private keys"
+		desc = "Accessing sensitive cloud credentials, private keys, or CMS secrets"
 	case "Dynamic_Code_Synthesis", "Python_Obfuscated_Execution":
 		severity = RiskHigh
 		category = "obfuscation"
@@ -288,6 +308,18 @@ func extractEvidenceItem(rm compiler.RuleMatch, relPath, content string) Evidenc
 		severity = RiskHigh
 		category = "install-hook"
 		desc = "Python setup.py command override executing subprocess or network requests"
+	case "PHP_WordPress_SupplyChain_Backdoor":
+		severity = RiskCritical
+		category = "backdoor"
+		desc = "WordPress supply chain backdoor with C2, rogue admin, or core file masquerading"
+	case "Web_Server_Config_Hijacking":
+		severity = RiskCritical
+		category = "persistence"
+		desc = "Web server (.htaccess) configuration hijacked to execute non-PHP files as PHP"
+	case "Bitwise_XOR_Obfuscated_Execution":
+		severity = RiskHigh
+		category = "obfuscation"
+		desc = "Bitwise XOR decryption loop paired with dynamic code evaluation"
 	case "Suspicious_Exfiltration_Endpoint":
 		severity = RiskMedium
 		category = "exfiltration"

@@ -6,9 +6,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/cawalch/go-yara-supplychain/pkg/analyzer"
 	"github.com/cawalch/go-yara-supplychain/pkg/ecosystems/npm"
+	"github.com/cawalch/go-yara-supplychain/pkg/ecosystems/php"
 	"github.com/cawalch/go-yara-supplychain/pkg/ecosystems/pypi"
 	"github.com/cawalch/go-yara-supplychain/pkg/report"
 )
@@ -28,7 +30,7 @@ type cliConfig struct {
 
 type discoveredTarget struct {
 	dir       string
-	ecosystem string // "npm" or "pypi"
+	ecosystem string // "npm", "pypi", or "php"
 }
 
 func main() {
@@ -81,7 +83,7 @@ func run(cfg *cliConfig) int {
 
 	discovered := discoverPackageDirs(cfg.paths)
 	if len(discovered) == 0 {
-		fmt.Fprintf(os.Stderr, "No supported packages (npm or Python/PyPI) found in specified paths: %v\n", cfg.paths)
+		fmt.Fprintf(os.Stderr, "No supported packages (npm, Python/PyPI, or PHP/WordPress) found in specified paths: %v\n", cfg.paths)
 		return 0
 	}
 
@@ -105,6 +107,13 @@ func run(cfg *cliConfig) int {
 				continue
 			}
 			verdict, err = engine.AnalyzePyPIPackage(pkg)
+		case "php":
+			pkg, pErr := php.ParsePackageDir(target.dir)
+			if pErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed inspecting PHP/WordPress package at %s: %v\n", target.dir, pErr)
+				continue
+			}
+			verdict, err = engine.AnalyzePHPPackage(pkg)
 		}
 
 		if err != nil {
@@ -151,8 +160,8 @@ func run(cfg *cliConfig) int {
 	return 0
 }
 
-// discoverPackageDirs inspects inputs and discovers package directories with package.json (npm)
-// or setup.py / pyproject.toml / setup.cfg (Python / PyPI).
+// discoverPackageDirs inspects inputs and discovers package directories with package.json (npm),
+// setup.py / pyproject.toml / setup.cfg (Python / PyPI), or composer.json / WordPress plugin headers (PHP).
 func discoverPackageDirs(targets []string) []discoveredTarget {
 	seen := make(map[string]bool)
 	var discovered []discoveredTarget
@@ -188,6 +197,29 @@ func discoverPackageDirs(targets []string) []discoveredTarget {
 				discovered = append(discovered, discoveredTarget{dir: abs, ecosystem: "pypi"})
 			}
 		}
+
+		// Check PHP / Composer / WordPress
+		isPhp := false
+		if _, err := os.Stat(filepath.Join(abs, "composer.json")); err == nil {
+			isPhp = true
+		} else if _, err := os.Stat(filepath.Join(abs, "style.css")); err == nil {
+			isPhp = true
+		} else {
+			entries, _ := os.ReadDir(abs)
+			for _, entry := range entries {
+				if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".php") {
+					isPhp = true
+					break
+				}
+			}
+		}
+		if isPhp {
+			key := "php:" + abs
+			if !seen[key] {
+				seen[key] = true
+				discovered = append(discovered, discoveredTarget{dir: abs, ecosystem: "php"})
+			}
+		}
 	}
 
 	for _, target := range targets {
@@ -203,7 +235,7 @@ func discoverPackageDirs(targets []string) []discoveredTarget {
 		// Check target itself
 		inspectDir(target)
 
-		// Walk subdirectories (e.g. node_modules, workspaces, sub-packages)
+		// Walk subdirectories (e.g. node_modules, wp-content/plugins, workspaces, sub-packages)
 		_ = filepath.WalkDir(target, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return nil
@@ -211,7 +243,7 @@ func discoverPackageDirs(targets []string) []discoveredTarget {
 			if d.IsDir() {
 				// Don't recurse into .git, .venv, etc.
 				name := d.Name()
-				if name == ".git" || name == ".venv" || name == "__pycache__" {
+				if name == ".git" || name == ".venv" || name == "__pycache__" || name == "vendor" {
 					return filepath.SkipDir
 				}
 				if path != target {

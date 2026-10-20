@@ -106,3 +106,20 @@ func TestNormalizePipeline(t *testing.T) {
 		t.Fatalf("expected normalized code to contain 'eval', got:\n%s", res.NormalizedCode)
 	}
 }
+
+func TestDetectXORLoop(t *testing.T) {
+	phpXOR := `$data[$i] = chr(ord($data[$i]) ^ ord($key[$i % strlen($key)]));`
+	if !DetectXORLoop(phpXOR) {
+		t.Errorf("expected DetectXORLoop = true for PHP XOR loop")
+	}
+
+	jsXOR := `const c = data.charCodeAt(i) ^ key.charCodeAt(i % key.length);`
+	if !DetectXORLoop(jsXOR) {
+		t.Errorf("expected DetectXORLoop = true for JS XOR loop")
+	}
+
+	cleanCode := `const x = a + b; return x * 2;`
+	if DetectXORLoop(cleanCode) {
+		t.Errorf("expected DetectXORLoop = false for clean code")
+	}
+}

@@ -18,7 +18,7 @@ rule Suspicious_Piped_Shell {
 
 rule Credential_And_Secret_Harvesting {
     meta:
-        description = "Detects access to sensitive environment credentials or private keys"
+        description = "Detects access to sensitive environment credentials, private keys, or CMS secrets"
         severity = "HIGH"
         category = "credential-theft"
     strings:
@@ -31,6 +31,7 @@ rule Credential_And_Secret_Harvesting {
         $k5 = "SLACK_BOT_TOKEN" ascii
         $k6 = "DISCORD_TOKEN" ascii
         $k7 = "PYPI_TOKEN" ascii
+        $k8 = "DB_PASSWORD" ascii
         $f1 = ".ssh/id_rsa" ascii
         $f2 = ".ssh/id_ed25519" ascii
         $f3 = ".aws/credentials" ascii
@@ -38,6 +39,7 @@ rule Credential_And_Secret_Harvesting {
         $f5 = "/.env" ascii
         $f6 = "\".env\"" ascii
         $f7 = "'.env'" ascii
+        $f8 = "wp-config.php" ascii
     condition:
         (($env or $pyenv) and 1 of ($k*)) or 1 of ($f*)
 }
@@ -145,4 +147,69 @@ rule Python_Obfuscated_Execution {
         $d4 = "codecs.decode(" ascii
     condition:
         any of ($e*) and any of ($d*)
+}
+
+rule PHP_WordPress_SupplyChain_Backdoor {
+    meta:
+        description = "Detects WordPress supply chain backdoors, rogue admin creation, and core file masquerading"
+        severity = "CRITICAL"
+        category = "backdoor"
+    strings:
+        $c2 = "rank1cdn.com" ascii nocase
+        $xor_key = "xmmqhn" ascii
+        $db1 = "_uf6qdn2hmm" ascii
+        $db2 = "t8krdk990phb" ascii
+        $db3 = "_np5pvf754c" ascii
+        $admin1 = "wpsupport_" ascii
+        $admin2 = "@wp-mail.net" ascii
+        $cron_tag = "#ms6v46" ascii
+        $fake_core = "class-wp-cache-util.php" ascii
+        $fpm_sock = "php-fpm" ascii
+        $proc_open = "proc_open" ascii
+    condition:
+        $c2 or
+        $xor_key or
+        1 of ($db*) or
+        ($admin1 and $admin2) or
+        $cron_tag or
+        $fake_core or
+        ($proc_open and $fpm_sock)
+}
+
+rule Web_Server_Config_Hijacking {
+    meta:
+        description = "Detects .htaccess configuration overriding non-executable extensions to execute as PHP"
+        severity = "CRITICAL"
+        category = "persistence"
+    strings:
+        $h1 = "application/x-httpd-php" ascii nocase
+        $h2 = "SetHandler" ascii nocase
+        $h3 = "AddType" ascii nocase
+        $h4 = "AddHandler" ascii nocase
+        $ext1 = ".cache" ascii nocase
+        $ext2 = ".png" ascii nocase
+        $ext3 = ".jpg" ascii nocase
+        $ext4 = ".ico" ascii nocase
+        $ext5 = ".txt" ascii nocase
+    condition:
+        ($h1 or any of ($h2, $h3, $h4)) and any of ($ext*)
+}
+
+rule Bitwise_XOR_Obfuscated_Execution {
+    meta:
+        description = "Detects bitwise XOR decryption loops paired with dynamic code evaluation"
+        severity = "HIGH"
+        category = "obfuscation"
+    strings:
+        $pxor1 = /ord\([^)]+\)\s*\^\s*ord\([^)]+\)/ ascii
+        $pxor2 = /\$\w+\[\$\w+\]\s*\^=\s*\$\w+/ ascii
+        $py_xor = /\w+\s*\^\s*\w+\[\w+\s*%\s*len\(/ ascii
+        $js_xor = /charCodeAt\([^)]+\)\s*\^\s*\w+/ ascii
+        $e1 = "eval(" ascii
+        $e2 = "assert(" ascii
+        $e3 = "create_function(" ascii
+        $e4 = "proc_open" ascii
+        $e5 = "shell_exec" ascii
+    condition:
+        any of ($pxor*, $py_xor, $js_xor) and any of ($e*)
 }

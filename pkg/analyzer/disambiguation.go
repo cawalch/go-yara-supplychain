@@ -7,16 +7,19 @@ import (
 
 var (
 	// Known standard native build commands used by legitimate addons
-	nativeBuildCmdRE = regexp.MustCompile(`(?i)\b(node-gyp|node-pre-gyp|cmake-js|cargo\s+build|make\b|ninja\b|msbuild\b|cargo-cp-artifact|cython|setup\.py\s+build)`)
+	nativeBuildCmdRE = regexp.MustCompile(`(?i)\b(node-gyp|node-pre-gyp|cmake-js|cargo\s+build|make\b|ninja\b|msbuild\b|cargo-cp-artifact|cython|setup\.py\s+build|composer\s+dump-autoload|wp\s+core|phpunit)`)
 
 	// Harmless banner / log messages in install hooks
-	consoleOnlyCmdRE = regexp.MustCompile(`(?i)^\s*(node\s+-e\s+['"]console\.log\([^)]+\)['"]|echo\s+['"][^'"]+['"]|python\s+-c\s+['"]print\([^)]+\)['"])\s*$`)
+	consoleOnlyCmdRE = regexp.MustCompile(`(?i)^\s*(node\s+-e\s+['"]console\.log\([^)]+\)['"]|echo\s+['"][^'"]+['"]|python\s+-c\s+['"]print\([^)]+\)['"]|php\s+-r\s+['"]echo\s+[^'"]+['"])\s*$`)
 
 	// Trusted domains for precompiled native binaries
 	trustedBinaryHosts = []string{
 		"registry.npmjs.org",
 		"pypi.org",
 		"files.pythonhosted.org",
+		"packagist.org",
+		"wordpress.org",
+		"downloads.wordpress.org",
 		"github.com",
 		"objects.githubusercontent.com",
 		"binaries.prisma.sh",
@@ -25,7 +28,7 @@ var (
 )
 
 // IsBenignBuildHook checks whether an install script hook is a standard compilation or notice,
-// ensuring zero false positives on tools like node-gyp or core-js.
+// ensuring zero false positives on tools like node-gyp, core-js, or composer.
 func IsBenignBuildHook(cmd string) bool {
 	clean := strings.TrimSpace(cmd)
 	if consoleOnlyCmdRE.MatchString(clean) {
