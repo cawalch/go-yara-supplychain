@@ -38,6 +38,7 @@ type Verdict struct {
 	PackageName     string                `json:"package_name"`
 	PackageVersion  string                `json:"package_version"`
 	PackagePath     string                `json:"package_path"`
+	Ecosystem       string                `json:"ecosystem,omitempty"` // "npm", "pypi", etc.
 	RiskLevel       RiskLevel             `json:"risk_level"`
 	Action          Action                `json:"action"`
 	ConfidenceScore float64               `json:"confidence_score"` // 0.0 to 1.0 (Calibrated Ensemble Score)
@@ -46,4 +47,15 @@ type Verdict struct {
 	HasInstallHooks bool                  `json:"has_install_hooks"`
 	HadObfuscation  bool                  `json:"had_obfuscation"`
 	Evidence        []EvidenceItem        `json:"evidence,omitempty"`
+}
+
+// TargetPackage encapsulates a normalized package representation from any ecosystem (npm, PyPI, etc.).
+type TargetPackage struct {
+	Ecosystem   string
+	Path        string
+	Name        string
+	Version     string
+	HasHooks    bool
+	HookScripts map[string]string
+	SourceFiles map[string][]byte
 }

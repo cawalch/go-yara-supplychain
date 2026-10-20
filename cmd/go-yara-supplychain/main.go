@@ -9,10 +9,11 @@ import (
 
 	"github.com/cawalch/go-yara-supplychain/pkg/analyzer"
 	"github.com/cawalch/go-yara-supplychain/pkg/ecosystems/npm"
+	"github.com/cawalch/go-yara-supplychain/pkg/ecosystems/pypi"
 	"github.com/cawalch/go-yara-supplychain/pkg/report"
 )
 
-const version = "0.1.0"
+var version = "0.1.0"
 
 type cliConfig struct {
 	sarifPath      string
@@ -23,6 +24,11 @@ type cliConfig struct {
 	noColor        bool
 	showVersion    bool
 	paths          []string
+}
+
+type discoveredTarget struct {
+	dir       string
+	ecosystem string // "npm" or "pypi"
 }
 
 func main() {
@@ -73,23 +79,36 @@ func run(cfg *cliConfig) int {
 		return 2
 	}
 
-	packageDirs := discoverPackageDirs(cfg.paths)
-	if len(packageDirs) == 0 {
-		fmt.Fprintf(os.Stderr, "No npm packages (containing package.json) found in specified paths: %v\n", cfg.paths)
+	discovered := discoverPackageDirs(cfg.paths)
+	if len(discovered) == 0 {
+		fmt.Fprintf(os.Stderr, "No supported packages (npm or Python/PyPI) found in specified paths: %v\n", cfg.paths)
 		return 0
 	}
 
-	verdicts := make([]*analyzer.Verdict, 0, len(packageDirs))
-	for _, pDir := range packageDirs {
-		pkg, err := npm.ParsePackageDir(pDir)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed inspecting package at %s: %v\n", pDir, err)
-			continue
+	verdicts := make([]*analyzer.Verdict, 0, len(discovered))
+	for _, target := range discovered {
+		var verdict *analyzer.Verdict
+		var err error
+
+		switch target.ecosystem {
+		case "npm":
+			pkg, pErr := npm.ParsePackageDir(target.dir)
+			if pErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed inspecting npm package at %s: %v\n", target.dir, pErr)
+				continue
+			}
+			verdict, err = engine.AnalyzePackage(pkg)
+		case "pypi":
+			pkg, pErr := pypi.ParsePackageDir(target.dir)
+			if pErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed inspecting PyPI package at %s: %v\n", target.dir, pErr)
+				continue
+			}
+			verdict, err = engine.AnalyzePyPIPackage(pkg)
 		}
 
-		verdict, err := engine.AnalyzePackage(pkg)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed analyzing package at %s: %v\n", pDir, err)
+			fmt.Fprintf(os.Stderr, "Warning: failed analyzing package at %s: %v\n", target.dir, err)
 			continue
 		}
 
@@ -132,10 +151,44 @@ func run(cfg *cliConfig) int {
 	return 0
 }
 
-// discoverPackageDirs inspects inputs and discovers package directories with package.json
-func discoverPackageDirs(targets []string) []string {
+// discoverPackageDirs inspects inputs and discovers package directories with package.json (npm)
+// or setup.py / pyproject.toml / setup.cfg (Python / PyPI).
+func discoverPackageDirs(targets []string) []discoveredTarget {
 	seen := make(map[string]bool)
-	var dirs []string
+	var discovered []discoveredTarget
+
+	inspectDir := func(dPath string) {
+		abs, err := filepath.Abs(dPath)
+		if err != nil {
+			return
+		}
+
+		// Check npm
+		pkgJSON := filepath.Join(abs, "package.json")
+		if _, err := os.Stat(pkgJSON); err == nil {
+			key := "npm:" + abs
+			if !seen[key] {
+				seen[key] = true
+				discovered = append(discovered, discoveredTarget{dir: abs, ecosystem: "npm"})
+			}
+		}
+
+		// Check PyPI
+		isPy := false
+		for _, pyManifest := range []string{"pyproject.toml", "setup.py", "setup.cfg"} {
+			if _, err := os.Stat(filepath.Join(abs, pyManifest)); err == nil {
+				isPy = true
+				break
+			}
+		}
+		if isPy {
+			key := "pypi:" + abs
+			if !seen[key] {
+				seen[key] = true
+				discovered = append(discovered, discoveredTarget{dir: abs, ecosystem: "pypi"})
+			}
+		}
+	}
 
 	for _, target := range targets {
 		info, err := os.Stat(target)
@@ -147,38 +200,27 @@ func discoverPackageDirs(targets []string) []string {
 			continue
 		}
 
-		// Check if target itself is a package
-		pkgJSON := filepath.Join(target, "package.json")
-		if _, err := os.Stat(pkgJSON); err == nil {
-			abs, _ := filepath.Abs(target)
-			if !seen[abs] {
-				seen[abs] = true
-				dirs = append(dirs, abs)
-			}
-		}
+		// Check target itself
+		inspectDir(target)
 
-		// Also check subdirectories (e.g. node_modules, workspaces) up to depth 2
+		// Walk subdirectories (e.g. node_modules, workspaces, sub-packages)
 		_ = filepath.WalkDir(target, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return nil
 			}
 			if d.IsDir() {
-				// Don't recurse into .git
-				if d.Name() == ".git" {
+				// Don't recurse into .git, .venv, etc.
+				name := d.Name()
+				if name == ".git" || name == ".venv" || name == "__pycache__" {
 					return filepath.SkipDir
 				}
-				pJSON := filepath.Join(path, "package.json")
-				if _, err := os.Stat(pJSON); err == nil {
-					abs, _ := filepath.Abs(path)
-					if !seen[abs] {
-						seen[abs] = true
-						dirs = append(dirs, abs)
-					}
+				if path != target {
+					inspectDir(path)
 				}
 			}
 			return nil
 		})
 	}
 
-	return dirs
+	return discovered
 }

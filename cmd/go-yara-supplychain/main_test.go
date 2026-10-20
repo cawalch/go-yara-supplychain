@@ -80,3 +80,27 @@ func TestRunMaliciousPackageWithSARIF(t *testing.T) {
 		t.Fatalf("SARIF report was not created: %v", err)
 	}
 }
+
+func TestRunPyPIPackage(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	pyproject := `
+[project]
+name = "safe-python-package"
+version = "0.5.0"
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "pyproject.toml"), []byte(pyproject), 0o644); err != nil {
+		t.Fatalf("writing pyproject.toml: %v", err)
+	}
+
+	cfg := &cliConfig{
+		failOnCritical: true,
+		noColor:        true,
+		paths:          []string{tmpDir},
+	}
+
+	code := run(cfg)
+	if code != 0 {
+		t.Errorf("expected exit code 0 for benign python package, got %d", code)
+	}
+}

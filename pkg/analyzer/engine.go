@@ -8,6 +8,7 @@ import (
 
 	"github.com/cawalch/go-yara-supplychain/pkg/deobfuscate"
 	"github.com/cawalch/go-yara-supplychain/pkg/ecosystems/npm"
+	"github.com/cawalch/go-yara-supplychain/pkg/ecosystems/pypi"
 	"github.com/cawalch/go-yara-supplychain/pkg/ml"
 	"github.com/cawalch/go-yara-supplychain/pkg/rules"
 	"github.com/cawalch/go-yara/compiler"
@@ -15,12 +16,12 @@ import (
 
 var (
 	pipeToShellRE = regexp.MustCompile(`(?i)(curl|wget)\s+[^|;` + "`" + `\r\n]+\|\s*(sh|bash|zsh|python|cmd\.exe|powershell)`)
-	curlRE        = regexp.MustCompile(`(?i)\b(curl|wget|fetch|http\.get)\b`)
-	evalRE        = regexp.MustCompile(`(?:\beval\s*\(|\b(?:new\s+)?Function\s*\(|\bvm\.runIn\w*\s*\()`)
-	childProcRE   = regexp.MustCompile(`(?i)\bchild_process\.(exec|spawn|execSync|fork)\b`)
+	curlRE        = regexp.MustCompile(`(?i)\b(curl|wget|fetch|http\.get|urllib\.request|requests\.(get|post))\b`)
+	evalRE        = regexp.MustCompile(`(?:\beval\s*\(|\b(?:new\s+)?Function\s*\(|\bvm\.runIn\w*\s*\(|\bexec\s*\()`)
+	childProcRE   = regexp.MustCompile(`(?i)\b(child_process\.(exec|spawn|execSync|fork)|subprocess\.(Popen|run|call|check_output)|os\.system)\b`)
 	rawIPRE       = regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d{2,5})?\b`)
 	webhookRE     = regexp.MustCompile(`(?i)(discord\.com/api/webhooks|api\.telegram\.org/bot|webhook\.site)`)
-	sensitiveRE   = regexp.MustCompile(`(?i)(\.ssh/id_|\.aws/credentials|/\.env\b|['"` + "`" + `]\.env['"` + "`" + `]|/etc/shadow|/etc/passwd)`)
+	sensitiveRE   = regexp.MustCompile(`(?i)(\.ssh/id_|\.aws/credentials|/\.env\b|['"` + "`" + `]\.env['"` + "`" + `]|/etc/shadow|/etc/passwd|os\.environ)`)
 )
 
 // Engine coordinates the multi-stage supply chain analysis pipeline.
@@ -43,16 +44,43 @@ func NewEngine() (*Engine, error) {
 
 // AnalyzePackage analyzes an inspected npm package and returns an actionable verdict.
 func (e *Engine) AnalyzePackage(pkg *npm.InspectedPackage) (*Verdict, error) {
+	return e.Analyze(TargetPackage{
+		Ecosystem:   "npm",
+		Path:        pkg.Path,
+		Name:        pkg.Manifest.Name,
+		Version:     pkg.Manifest.Version,
+		HasHooks:    pkg.HasHooks,
+		HookScripts: pkg.HookScripts,
+		SourceFiles: pkg.SourceFiles,
+	})
+}
+
+// AnalyzePyPIPackage analyzes an inspected Python/PyPI package and returns an actionable verdict.
+func (e *Engine) AnalyzePyPIPackage(pkg *pypi.Package) (*Verdict, error) {
+	return e.Analyze(TargetPackage{
+		Ecosystem:   "pypi",
+		Path:        pkg.Path,
+		Name:        pkg.Name,
+		Version:     pkg.Version,
+		HasHooks:    pkg.HasHooks,
+		HookScripts: pkg.HookScripts,
+		SourceFiles: pkg.SourceFiles,
+	})
+}
+
+// Analyze coordinates multi-stage static analysis, heuristic scoring, and neural inference for any package target.
+func (e *Engine) Analyze(target TargetPackage) (*Verdict, error) {
 	scanner := compiler.NewScanner(e.compiledProg)
 	defer scanner.Close()
 
 	verdict := &Verdict{
-		PackageName:     pkg.Manifest.Name,
-		PackageVersion:  pkg.Manifest.Version,
-		PackagePath:     pkg.Path,
+		PackageName:     target.Name,
+		PackageVersion:  target.Version,
+		PackagePath:     target.Path,
+		Ecosystem:       target.Ecosystem,
 		RiskLevel:       RiskBenign,
 		Action:          ActionPass,
-		HasInstallHooks: pkg.HasHooks,
+		HasInstallHooks: target.HasHooks,
 		Evidence:        make([]EvidenceItem, 0),
 	}
 
@@ -61,12 +89,17 @@ func (e *Engine) AnalyzePackage(pkg *npm.InspectedPackage) (*Verdict, error) {
 	hadObfuscation := false
 	var totalSourceLen int
 
-	if pkg.HasHooks {
+	if target.HasHooks {
 		fv.HasLifecycleHook = 1.0
 	}
 
-	// 1. Analyze Package Lifecycle Scripts (package.json scripts)
-	for hookName, hookCmd := range pkg.HookScripts {
+	hookOriginFile := "package.json"
+	if target.Ecosystem == "pypi" {
+		hookOriginFile = "setup.py"
+	}
+
+	// 1. Analyze Package Lifecycle Scripts / Setup Hooks
+	for hookName, hookCmd := range target.HookScripts {
 		if curlRE.MatchString(hookCmd) {
 			fv.HookNetworkDownload = 1.0
 		}
@@ -77,7 +110,7 @@ func (e *Engine) AnalyzePackage(pkg *npm.InspectedPackage) (*Verdict, error) {
 			heuristicScore += 0.95
 			verdict.Evidence = append(verdict.Evidence, EvidenceItem{
 				RuleID:      "Suspicious_Piped_Shell",
-				FilePath:    "package.json",
+				FilePath:    hookOriginFile,
 				Severity:    RiskCritical,
 				Category:    "dropper",
 				Description: fmt.Sprintf("Install hook '%s' pipes remote content directly to shell interpreter: %s", hookName, hookCmd),
@@ -86,14 +119,14 @@ func (e *Engine) AnalyzePackage(pkg *npm.InspectedPackage) (*Verdict, error) {
 			continue
 		}
 
-		// Disambiguate benign build commands (node-gyp rebuild, console notices)
+		// Disambiguate benign build commands (node-gyp rebuild, cython, console notices)
 		if IsBenignBuildHook(hookCmd) {
 			continue
 		}
 	}
 
 	// 2. Scan and Analyze Source Files
-	for relPath, rawContent := range pkg.SourceFiles {
+	for relPath, rawContent := range target.SourceFiles {
 		totalSourceLen += len(rawContent)
 
 		// Feature extraction from source content
@@ -132,7 +165,7 @@ func (e *Engine) AnalyzePackage(pkg *npm.InspectedPackage) (*Verdict, error) {
 			hadObfuscation = true
 		}
 
-		// Disambiguate legitimate binary downloaders (esbuild, sharp)
+		// Disambiguate legitimate binary downloaders (esbuild, sharp, python prebuilt binaries)
 		if IsBenignBinaryFetcher(normRes.NormalizedCode) {
 			fv.ChecksumValidation = 1.0
 			fv.TrustedCDNSource = 1.0
@@ -174,7 +207,7 @@ func (e *Engine) AnalyzePackage(pkg *npm.InspectedPackage) (*Verdict, error) {
 
 	if totalSourceLen > 0 {
 		hookLen := 0
-		for _, cmd := range pkg.HookScripts {
+		for _, cmd := range target.HookScripts {
 			hookLen += len(cmd)
 		}
 		if hookLen > 0 {
@@ -239,7 +272,7 @@ func extractEvidenceItem(rm compiler.RuleMatch, relPath, content string) Evidenc
 		severity = RiskCritical
 		category = "dropper"
 		desc = "Remote script download piped directly to shell"
-	case "Reverse_Shell_Payload":
+	case "Reverse_Shell_Payload", "Python_Reverse_Shell":
 		severity = RiskCritical
 		category = "backdoor"
 		desc = "Reverse shell network execution payload"
@@ -247,10 +280,14 @@ func extractEvidenceItem(rm compiler.RuleMatch, relPath, content string) Evidenc
 		severity = RiskHigh
 		category = "credential-theft"
 		desc = "Accessing sensitive cloud credentials or SSH private keys"
-	case "Dynamic_Code_Synthesis":
+	case "Dynamic_Code_Synthesis", "Python_Obfuscated_Execution":
 		severity = RiskHigh
 		category = "obfuscation"
 		desc = "Dynamic evaluation of decoded byte/base64 payload"
+	case "Python_Suspicious_Install_Hook":
+		severity = RiskHigh
+		category = "install-hook"
+		desc = "Python setup.py command override executing subprocess or network requests"
 	case "Suspicious_Exfiltration_Endpoint":
 		severity = RiskMedium
 		category = "exfiltration"

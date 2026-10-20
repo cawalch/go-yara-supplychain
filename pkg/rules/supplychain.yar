@@ -9,8 +9,8 @@ rule Suspicious_Piped_Shell {
         severity = "CRITICAL"
         category = "dropper"
     strings:
-        $p1 = /curl\s+[^|;`\r\n]+\|\s*(sh|bash|zsh)/ ascii nocase
-        $p2 = /wget\s+[^|;`\r\n]+\|\s*(sh|bash|zsh)/ ascii nocase
+        $p1 = /curl\s+[^|;`\r\n]+\|\s*(sh|bash|zsh|python)/ ascii nocase
+        $p2 = /wget\s+[^|;`\r\n]+\|\s*(sh|bash|zsh|python)/ ascii nocase
         $p3 = /fetch\s*\([^)]+\)\s*\.\s*then\s*\([^)]*exec/ ascii nocase
     condition:
         any of them
@@ -23,12 +23,14 @@ rule Credential_And_Secret_Harvesting {
         category = "credential-theft"
     strings:
         $env = "process.env" ascii
+        $pyenv = "os.environ" ascii
         $k1 = "AWS_SECRET_ACCESS_KEY" ascii
         $k2 = "AWS_ACCESS_KEY_ID" ascii
         $k3 = "NPM_TOKEN" ascii
         $k4 = "GITHUB_TOKEN" ascii
         $k5 = "SLACK_BOT_TOKEN" ascii
         $k6 = "DISCORD_TOKEN" ascii
+        $k7 = "PYPI_TOKEN" ascii
         $f1 = ".ssh/id_rsa" ascii
         $f2 = ".ssh/id_ed25519" ascii
         $f3 = ".aws/credentials" ascii
@@ -37,7 +39,7 @@ rule Credential_And_Secret_Harvesting {
         $f6 = "\".env\"" ascii
         $f7 = "'.env'" ascii
     condition:
-        ($env and 1 of ($k*)) or 1 of ($f*)
+        (($env or $pyenv) and 1 of ($k*)) or 1 of ($f*)
 }
 
 rule Suspicious_Exfiltration_Endpoint {
@@ -88,4 +90,59 @@ rule Reverse_Shell_Payload {
         $spawn = "spawn" ascii
     condition:
         $net and $cp and any of ($sh*) and $spawn
+}
+
+rule Python_Suspicious_Install_Hook {
+    meta:
+        description = "Detects setup.py overriding install/develop command classes to execute arbitrary code"
+        severity = "HIGH"
+        category = "install-hook"
+    strings:
+        $c1 = "cmdclass" ascii
+        $c2 = "class " ascii
+        $i1 = "install" ascii
+        $i2 = "develop" ascii
+        $i3 = "build_py" ascii
+        $s1 = "os.system" ascii
+        $s2 = "subprocess" ascii
+        $s3 = "exec(" ascii
+        $s4 = "urllib" ascii
+        $s5 = "requests" ascii
+        $s6 = "socket" ascii
+    condition:
+        $c1 and $c2 and any of ($i*) and any of ($s*)
+}
+
+rule Python_Reverse_Shell {
+    meta:
+        description = "Detects reverse shell execution patterns in Python dependencies"
+        severity = "CRITICAL"
+        category = "backdoor"
+    strings:
+        $sock = "socket." ascii
+        $conn = ".connect((" ascii
+        $dup = "dup2(" ascii
+        $sub = "subprocess." ascii
+        $pty = "pty.spawn" ascii
+        $sh1 = "/bin/sh" ascii
+        $sh2 = "/bin/bash" ascii
+        $sh3 = "cmd.exe" ascii
+    condition:
+        $sock and $conn and ($dup or $sub or $pty or any of ($sh*))
+}
+
+rule Python_Obfuscated_Execution {
+    meta:
+        description = "Detects obfuscated code execution via base64 or compression decoding in Python"
+        severity = "HIGH"
+        category = "obfuscation"
+    strings:
+        $e1 = "exec(" ascii
+        $e2 = "eval(" ascii
+        $d1 = "base64.b64decode(" ascii
+        $d2 = "b64decode(" ascii
+        $d3 = "zlib.decompress(" ascii
+        $d4 = "codecs.decode(" ascii
+    condition:
+        any of ($e*) and any of ($d*)
 }

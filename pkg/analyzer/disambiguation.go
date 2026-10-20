@@ -7,14 +7,16 @@ import (
 
 var (
 	// Known standard native build commands used by legitimate addons
-	nativeBuildCmdRE = regexp.MustCompile(`(?i)\b(node-gyp|node-pre-gyp|cmake-js|cargo\s+build|make\b|ninja\b|msbuild\b|cargo-cp-artifact)`)
+	nativeBuildCmdRE = regexp.MustCompile(`(?i)\b(node-gyp|node-pre-gyp|cmake-js|cargo\s+build|make\b|ninja\b|msbuild\b|cargo-cp-artifact|cython|setup\.py\s+build)`)
 
 	// Harmless banner / log messages in install hooks
-	consoleOnlyCmdRE = regexp.MustCompile(`(?i)^\s*(node\s+-e\s+['"]console\.log\([^)]+\)['"]|echo\s+['"][^'"]+['"])\s*$`)
+	consoleOnlyCmdRE = regexp.MustCompile(`(?i)^\s*(node\s+-e\s+['"]console\.log\([^)]+\)['"]|echo\s+['"][^'"]+['"]|python\s+-c\s+['"]print\([^)]+\)['"])\s*$`)
 
 	// Trusted domains for precompiled native binaries
 	trustedBinaryHosts = []string{
 		"registry.npmjs.org",
+		"pypi.org",
+		"files.pythonhosted.org",
 		"github.com",
 		"objects.githubusercontent.com",
 		"binaries.prisma.sh",

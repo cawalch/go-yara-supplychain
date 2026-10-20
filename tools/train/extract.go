@@ -15,12 +15,12 @@ import (
 
 var (
 	pipeToShellRE = regexp.MustCompile(`(?i)(curl|wget)\s+[^|;` + "`" + `\r\n]+\|\s*(sh|bash|zsh|python|cmd\.exe|powershell)`)
-	curlRE        = regexp.MustCompile(`(?i)\b(curl|wget|fetch|http\.get)\b`)
-	evalRE        = regexp.MustCompile(`(?:\beval\s*\(|\b(?:new\s+)?Function\s*\(|\bvm\.runIn\w*\s*\()`)
-	childProcRE   = regexp.MustCompile(`(?i)\bchild_process\.(exec|spawn|execSync|fork)\b`)
+	curlRE        = regexp.MustCompile(`(?i)\b(curl|wget|fetch|http\.get|urllib\.request|requests\.(get|post))\b`)
+	evalRE        = regexp.MustCompile(`(?:\beval\s*\(|\b(?:new\s+)?Function\s*\(|\bvm\.runIn\w*\s*\(|\bexec\s*\()`)
+	childProcRE   = regexp.MustCompile(`(?i)\b(child_process\.(exec|spawn|execSync|fork)|subprocess\.(Popen|run|call|check_output)|os\.system)\b`)
 	rawIPRE       = regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d{2,5})?\b`)
 	webhookRE     = regexp.MustCompile(`(?i)(discord\.com/api/webhooks|api\.telegram\.org/bot|webhook\.site)`)
-	sensitiveRE   = regexp.MustCompile(`(?i)(\.ssh/id_|\.aws/credentials|/\.env\b|['"` + "`" + `]\.env['"` + "`" + `]|/etc/shadow|/etc/passwd)`)
+	sensitiveRE   = regexp.MustCompile(`(?i)(\.ssh/id_|\.aws/credentials|/\.env\b|['"` + "`" + `]\.env['"` + "`" + `]|/etc/shadow|/etc/passwd|os\.environ)`)
 )
 
 // ProcessedSample contains the ground-truth label and extracted 16-D feature vector.
