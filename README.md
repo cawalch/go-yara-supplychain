@@ -22,7 +22,7 @@ Traditional signature scanners fail in package registries: they flag legitimate 
   * **Bitwise XOR Detection**: Flags XOR decryption loops paired with dynamic code evaluation (`eval`, `assert`, `create_function`, `proc_open`).
   * **Passive Library Invariant**: Flags packages that execute arbitrary code outside standard execution flows (e.g. at install time or interpreter initialization).
 * **Calibrated Ensemble Model**: Combines rule matches with an $L_2$-regularized logistic model trained via 5-fold cross-validation on real-world packages. Yields 0.00% false positive rates on complex production bundles (React, Lodash, Webpack).
-* **Zero Network at Scan Time**: All rules and model weights are compiled into the binary via `//go:embed`. Runs in air-gapped environments and on-prem mirrors (JFrog Artifactory) without external telemetry or API dependencies.
+* **Zero Network at Scan Time**: All rules and model weights are compiled into the binary via `//go:embed`. Runs in air-gapped environments without external telemetry or API dependencies.
 * **Zero CGO**: Statically links to a single binary. No dynamic libraries, GCC/Clang toolchains, or container runtime dependencies.
 
 ---
@@ -51,7 +51,7 @@ Traditional signature scanners fail in package registries: they flag legitimate 
                                     ▼
                         Domain Disambiguation
                - Whitelists checksum-verified binary fetchers
-               - Validates trusted host mirrors (npm, PyPI, Artifactory)
+               - Validates trusted package registries and mirrors
                                     │
                                     ▼
                         Pure-Go YARA Matcher
@@ -127,7 +127,7 @@ jobs:
           sarif_file: 'supplychain.sarif'
 ```
 
-### Target Vela CI/CD
+### Vela CI/CD
 
 `go-yara-supplychain` runs natively as a Vela container plugin:
 
@@ -147,13 +147,6 @@ steps:
 ```
 
 *Vela parameters defined under `parameters:` are automatically mapped to `PARAMETER_*` environment variables by the container entrypoint.*
-
-### Air-Gapped & On-Premises (JFrog Artifactory)
-
-`go-yara-supplychain` makes no external network calls during scanning.
-
-* **Docker Registry Mirror**: Mirror `ghcr.io/cawalch/go-yara-supplychain:v0.2.0` into your local Artifactory Docker registry or build using the root [`Dockerfile`](Dockerfile).
-* **Internal Host Recognition**: The disambiguation engine recognizes `artifactory` and `*.jfrog.io` hostnames as trusted binary mirrors, preventing false alarms when internal packages download dependencies from private mirrors.
 
 ---
 
