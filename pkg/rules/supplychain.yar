@@ -195,6 +195,19 @@ rule Web_Server_Config_Hijacking {
         ($h1 or any of ($h2, $h3, $h4)) and any of ($ext*)
 }
 
+rule Python_Pth_AutoExec_Hook {
+    meta:
+        description = "Detects Python .pth path configuration file abusing interpreter startup auto-execution"
+        severity = "CRITICAL"
+        category = "dropper"
+    strings:
+        $p1 = /import\s+(os|subprocess|urllib|requests|sys)/ ascii
+        $p2 = /os\.system\(/ ascii
+        $p3 = /subprocess\.(Popen|run|call)/ ascii
+    condition:
+        $p1 and any of ($p2, $p3)
+}
+
 rule Bitwise_XOR_Obfuscated_Execution {
     meta:
         description = "Detects bitwise XOR decryption loops paired with dynamic code evaluation"

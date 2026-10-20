@@ -308,6 +308,10 @@ func extractEvidenceItem(rm compiler.RuleMatch, relPath, content string) Evidenc
 		severity = RiskHigh
 		category = "install-hook"
 		desc = "Python setup.py command override executing subprocess or network requests"
+	case "Python_Pth_AutoExec_Hook":
+		severity = RiskCritical
+		category = "dropper"
+		desc = "Python .pth auto-execution file abusing interpreter startup"
 	case "PHP_WordPress_SupplyChain_Backdoor":
 		severity = RiskCritical
 		category = "backdoor"

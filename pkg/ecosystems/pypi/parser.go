@@ -150,7 +150,7 @@ func ParsePackageDir(dir string) (*Package, error) {
 		}
 
 		ext := strings.ToLower(filepath.Ext(path))
-		if ext == ".py" || ext == ".sh" || ext == ".bash" {
+		if ext == ".py" || ext == ".sh" || ext == ".bash" || ext == ".pth" {
 			rel, err := filepath.Rel(dir, path)
 			if err != nil {
 				return nil
@@ -173,6 +173,15 @@ func ParsePackageDir(dir string) (*Package, error) {
 
 			sourceFiles[rel] = content
 			fileCount++
+
+			// Check for Python .pth startup auto-exec files (LiteLLM / TeamPCP attack vector)
+			if ext == ".pth" {
+				s := string(content)
+				if strings.Contains(s, "import ") || suspiciousExecRE.MatchString(s) {
+					hasHooks = true
+					hookScripts[rel+":auto_startup"] = strings.TrimSpace(s)
+				}
+			}
 		}
 		return nil
 	})
