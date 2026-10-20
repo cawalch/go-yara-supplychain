@@ -24,6 +24,8 @@ var (
 		"objects.githubusercontent.com",
 		"binaries.prisma.sh",
 		"releases.hashicorp.com",
+		"jfrog.io",
+		"artifactory",
 	}
 )
 
