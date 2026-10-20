@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"go/format"
 	"math"
 	"os"
 	"strings"
@@ -225,7 +226,12 @@ func GenerateGoWeightsCode(model *TrainedLinearModel, outputPath string) error {
 	sb.WriteString("}\n\n")
 	fmt.Fprintf(&sb, "// TrainedBias represents the negative prior baseline for clean packages.\nconst TrainedBias = %.6f\n", model.Bias)
 
-	return os.WriteFile(outputPath, []byte(sb.String()), 0o644)
+	formatted, err := format.Source([]byte(sb.String()))
+	if err != nil {
+		return fmt.Errorf("formatting generated Go code: %w", err)
+	}
+
+	return os.WriteFile(outputPath, formatted, 0o644)
 }
 
 // GenerateMarkdownReport produces an auditable training report with cross-validation metrics and odds ratios.
