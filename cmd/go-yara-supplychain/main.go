@@ -47,19 +47,30 @@ func main() {
 func parseFlags(args []string) *cliConfig {
 	flagSet := flag.NewFlagSet("go-yara-supplychain", flag.ContinueOnError)
 
-	sarifPath := flagSet.String("sarif", "", "Path to write SARIF 2.1.0 report")
-	jsonOutput := flagSet.Bool("json", false, "Output results in JSON format")
-	ndjsonOutput := flagSet.Bool("ndjson", false, "Output results in NDJSON format")
-	failOnCritical := flagSet.Bool("fail-on-critical", true, "Exit with code 1 if CRITICAL supply chain threats are detected")
-	failOnWarn := flagSet.Bool("fail-on-warn", false, "Exit with code 1 if HIGH or MEDIUM threats are detected")
-	noColor := flagSet.Bool("no-color", false, "Disable colored terminal output")
+	defaultSarif := getEnvFallback("PARAMETER_SARIF", "PARAMETER_SARIF_FILE")
+	defaultJSON := getEnvBool("PARAMETER_JSON", false)
+	defaultNDJSON := getEnvBool("PARAMETER_NDJSON", false)
+	defaultFailCritical := getEnvBool("PARAMETER_FAIL_ON_CRITICAL", true)
+	defaultFailWarn := getEnvBool("PARAMETER_FAIL_ON_WARN", false)
+	defaultNoColor := getEnvBool("PARAMETER_NO_COLOR", false)
+
+	sarifPath := flagSet.String("sarif", defaultSarif, "Path to write SARIF 2.1.0 report")
+	jsonOutput := flagSet.Bool("json", defaultJSON, "Output results in JSON format")
+	ndjsonOutput := flagSet.Bool("ndjson", defaultNDJSON, "Output results in NDJSON format")
+	failOnCritical := flagSet.Bool("fail-on-critical", defaultFailCritical, "Exit with code 1 if CRITICAL supply chain threats are detected")
+	failOnWarn := flagSet.Bool("fail-on-warn", defaultFailWarn, "Exit with code 1 if HIGH or MEDIUM threats are detected")
+	noColor := flagSet.Bool("no-color", defaultNoColor, "Disable colored terminal output")
 	showVersion := flagSet.Bool("version", false, "Print version and exit")
 
 	_ = flagSet.Parse(args)
 
 	targets := flagSet.Args()
 	if len(targets) == 0 {
-		targets = []string{"."}
+		if envPath := getEnvFallback("PARAMETER_PATH", "PARAMETER_TARGET"); envPath != "" {
+			targets = []string{envPath}
+		} else {
+			targets = []string{"."}
+		}
 	}
 
 	return &cliConfig{
@@ -72,6 +83,23 @@ func parseFlags(args []string) *cliConfig {
 		showVersion:    *showVersion,
 		paths:          targets,
 	}
+}
+
+func getEnvFallback(keys ...string) string {
+	for _, k := range keys {
+		if val := strings.TrimSpace(os.Getenv(k)); val != "" {
+			return val
+		}
+	}
+	return ""
+}
+
+func getEnvBool(key string, defaultVal bool) bool {
+	val := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if val == "" {
+		return defaultVal
+	}
+	return val == "true" || val == "1" || val == "yes"
 }
 
 func run(cfg *cliConfig) int {

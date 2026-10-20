@@ -22,6 +22,32 @@ func TestParseFlags(t *testing.T) {
 	}
 }
 
+func TestParseFlags_VelaParameters(t *testing.T) {
+	t.Setenv("PARAMETER_SARIF", "vela-out.sarif")
+	t.Setenv("PARAMETER_PATH", "/workspace/src")
+	t.Setenv("PARAMETER_FAIL_ON_WARN", "true")
+	t.Setenv("PARAMETER_NO_COLOR", "1")
+	t.Setenv("PARAMETER_JSON", "true")
+
+	// Call without CLI args, should pick up PARAMETER_* from Vela environment
+	cfg := parseFlags([]string{})
+	if cfg.sarifPath != "vela-out.sarif" {
+		t.Errorf("expected sarifPath='vela-out.sarif', got '%s'", cfg.sarifPath)
+	}
+	if len(cfg.paths) != 1 || cfg.paths[0] != "/workspace/src" {
+		t.Errorf("expected paths=[/workspace/src], got %v", cfg.paths)
+	}
+	if !cfg.failOnWarn {
+		t.Errorf("expected failOnWarn=true")
+	}
+	if !cfg.noColor {
+		t.Errorf("expected noColor=true")
+	}
+	if !cfg.jsonOutput {
+		t.Errorf("expected jsonOutput=true")
+	}
+}
+
 func TestRunBenignPackage(t *testing.T) {
 	tmpDir := t.TempDir()
 
