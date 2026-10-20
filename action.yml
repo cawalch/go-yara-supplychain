@@ -7,7 +7,7 @@ branding:
 
 inputs:
   path:
-    description: 'Path or directory of packages to scan (contains package.json or node_modules)'
+    description: 'Path or directory of packages to scan (supports npm package.json/node_modules and Python setup.py/pyproject.toml)'
     required: false
     default: '.'
   sarif-file:
@@ -27,9 +27,9 @@ runs:
   using: 'composite'
   steps:
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
-        go-version: '1.24'
+        go-version: '1.26.x'
         cache: false
 
     - name: Run go-yara-supplychain
