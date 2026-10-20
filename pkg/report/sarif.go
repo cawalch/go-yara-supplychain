@@ -135,6 +135,8 @@ func GenerateSARIF(verdicts []*analyzer.Verdict) (*SARIFReport, error) {
 					"packageName":     v.PackageName,
 					"packageVersion":  v.PackageVersion,
 					"confidenceScore": v.ConfidenceScore,
+					"mlScore":         v.MLScore,
+					"mlAttributions":  v.MLAttributions,
 					"category":        ev.Category,
 				},
 			})

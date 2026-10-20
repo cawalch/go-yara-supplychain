@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/cawalch/go-yara-supplychain/pkg/analyzer"
+	"github.com/cawalch/go-yara-supplychain/pkg/ml"
 )
 
 // ANSI color escape codes
@@ -15,6 +16,7 @@ const (
 	ansiRed    = "\033[31m"
 	ansiGreen  = "\033[32m"
 	ansiYellow = "\033[33m"
+	ansiCyan   = "\033[36m"
 	ansiGray   = "\033[90m"
 )
 
@@ -91,6 +93,13 @@ func WriteTerminal(w io.Writer, verdicts []*analyzer.Verdict, noColor bool) erro
 				return err
 			}
 		}
+
+		if v.MLScore >= 0.50 && len(v.MLAttributions) > 0 {
+			if err := printMLAttributions(w, v.MLScore, v.MLAttributions, c); err != nil {
+				return err
+			}
+		}
+
 		if _, err := fmt.Fprintln(w); err != nil {
 			return err
 		}
@@ -139,5 +148,29 @@ func printEvidenceList(w io.Writer, evidence []analyzer.EvidenceItem, c *termina
 		}
 	}
 
+	return nil
+}
+
+func printMLAttributions(w io.Writer, mlScore float64, attributions []ml.FeatureInfluence, c *terminalColors) error {
+	if _, err := fmt.Fprintf(w, "  %sNeural Anomaly Risk:%s %.1f%%\n", c.bold, c.reset, mlScore*100.0); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  %sTop Contributing Signals (Explainable AI):%s\n", c.gray, c.reset); err != nil {
+		return err
+	}
+
+	for _, attr := range attributions {
+		sign := "+"
+		col := c.red
+		if attr.Impact < 0 {
+			sign = ""
+			col = c.green
+		}
+		if _, err := fmt.Fprintf(w, "    - %s%s%s: impact %s%s%.2f%s\n",
+			c.bold, attr.Name, c.reset,
+			col, sign, attr.Impact, c.reset); err != nil {
+			return err
+		}
+	}
 	return nil
 }

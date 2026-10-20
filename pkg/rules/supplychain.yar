@@ -32,8 +32,10 @@ rule Credential_And_Secret_Harvesting {
         $f1 = ".ssh/id_rsa" ascii
         $f2 = ".ssh/id_ed25519" ascii
         $f3 = ".aws/credentials" ascii
-        $f4 = ".npmrc" ascii
-        $f5 = ".env" ascii
+        $f4 = "/.npmrc" ascii
+        $f5 = "/.env" ascii
+        $f6 = "\".env\"" ascii
+        $f7 = "'.env'" ascii
     condition:
         ($env and 1 of ($k*)) or 1 of ($f*)
 }
