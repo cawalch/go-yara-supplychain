@@ -1,0 +1,52 @@
+name: 'go-yara-supplychain'
+description: 'High-confidence supply chain malware detection engine for software packages (pure Go, zero CGO)'
+author: 'cawalch'
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  path:
+    description: 'Path or directory of packages to scan (contains package.json or node_modules)'
+    required: false
+    default: '.'
+  sarif-file:
+    description: 'File path to write SARIF 2.1.0 output for GitHub Security tab'
+    required: false
+    default: 'supplychain-results.sarif'
+  fail-on-critical:
+    description: 'Exit with non-zero status code if CRITICAL threat is detected'
+    required: false
+    default: 'true'
+  fail-on-warn:
+    description: 'Exit with non-zero status code if HIGH or MEDIUM threat is detected'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+        cache: false
+
+    - name: Run go-yara-supplychain
+      shell: bash
+      run: |
+        ARGS=""
+        if [ -n "${{ inputs.sarif-file }}" ]; then
+          ARGS="$ARGS --sarif=${{ inputs.sarif-file }}"
+        fi
+        if [ "${{ inputs.fail-on-critical }}" = "true" ]; then
+          ARGS="$ARGS --fail-on-critical"
+        else
+          ARGS="$ARGS --fail-on-critical=false"
+        fi
+        if [ "${{ inputs.fail-on-warn }}" = "true" ]; then
+          ARGS="$ARGS --fail-on-warn"
+        fi
+
+        echo "Running go-yara-supplychain scan on ${{ inputs.path }}..."
+        go run github.com/cawalch/go-yara-supplychain/cmd/go-yara-supplychain@latest $ARGS "${{ inputs.path }}"
