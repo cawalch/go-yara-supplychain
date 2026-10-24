@@ -5,23 +5,23 @@ package ml
 
 // TrainedWeights contains the empirical learned coefficients from the training corpus.
 var TrainedWeights = [16]float64{
-	-0.451827, // [0] HasLifecycleHook
-	1.769528,  // [1] HookPipesToShell
-	0.659605,  // [2] HookNetworkDownload
-	-0.729505, // [3] ChecksumValidation
-	-0.729505, // [4] TrustedCDNSource
-	0.511362,  // [5] UnicodeObfuscation
+	-0.447832, // [0] HasLifecycleHook
+	1.685872,  // [1] HookPipesToShell
+	0.702015,  // [2] HookNetworkDownload
+	-0.706427, // [3] ChecksumValidation
+	-0.706427, // [4] TrustedCDNSource
+	0.325102,  // [5] UnicodeObfuscation
 	0.000000,  // [6] StringConcatDensity
-	0.556218,  // [7] Base64PayloadCount
-	-0.219189, // [8] DynamicEval
+	0.460920,  // [7] Base64PayloadCount
+	-0.263751, // [8] DynamicEval
 	0.000000,  // [9] ChildProcessExec
-	2.867185,  // [10] NetworkRawIP
-	3.492853,  // [11] WebhookExfiltration
-	-0.874814, // [12] SensitivePathAccess
+	2.697118,  // [10] NetworkRawIP
+	2.778267,  // [11] WebhookExfiltration
+	-1.076945, // [12] SensitivePathAccess
 	0.000000,  // [13] ProcessTampering
-	-0.127977, // [14] ScriptSizeRatio
-	3.282871,  // [15] YARAMatchWeight
+	-0.108270, // [14] ScriptSizeRatio
+	3.648557,  // [15] YARAMatchWeight
 }
 
 // TrainedBias represents the negative prior baseline for clean packages.
-const TrainedBias = -5.185050
+const TrainedBias = -5.262175
