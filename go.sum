@@ -1,5 +1,5 @@
-github.com/cawalch/go-yara v0.7.3-0.20261020113736-55a0cbfb5729 h1:VEG/f1cOOTz235s3c7HLnXTvG8MxDHw+fbcps7YjbTo=
-github.com/cawalch/go-yara v0.7.3-0.20261020113736-55a0cbfb5729/go.mod h1:k2ZxL/ecSu1bDI6itT7UwnvxO30ACkImPZb9sCQkI6o=
+github.com/cawalch/go-yara v0.8.1 h1:QpniFAg2xUvvi02ERqozzTBfmyGf6TbuufqcVltXCHI=
+github.com/cawalch/go-yara v0.8.1/go.mod h1:k2ZxL/ecSu1bDI6itT7UwnvxO30ACkImPZb9sCQkI6o=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 go.yaml.in/yaml/v3 v3.0.5 h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=
